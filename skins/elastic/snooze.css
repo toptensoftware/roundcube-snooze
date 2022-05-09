@@ -1,0 +1,27 @@
+.menu a.snooze:before {
+    content: "\f017";
+}
+
+.popover .menu a.snooze:before {
+    content: "    ";
+}
+
+.popover .menu a.snooze {
+    padding-left: 20px;
+}
+
+#aria-label-snoozemenu {
+    padding: 10px;
+    margin: 0;
+    font-size: 10pt;
+    font-weight: bold;
+}
+
+.folderlist li.snoozed>a:before {
+    content: "\f017";
+    font-weight: 900;
+}
+
+#pickatime-dialog label:not(:first-child) {
+    margin-top: 20px;
+}

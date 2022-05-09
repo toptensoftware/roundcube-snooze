@@ -1,0 +1,24 @@
+{
+    "name": "toptensoftware/snooze",
+    "type": "roundcube-plugin",
+    "description": "This adds a snooze button to move selected messages to the snooze folder and includes a script to automatically move them back to inbox when the snooze period is over.",
+    "license": "GPL-3.0-or-later",
+    "version": "1.0",
+    "authors": [
+        {
+            "name": "Brad Robinson",
+            "email": "brad@toptensoftware.com",
+            "role": "Lead"
+        }
+    ],
+    "repositories": [
+        {
+            "type": "composer",
+            "url": "https://plugins.roundcube.net"
+        }
+    ],
+    "require": {
+        "php": ">=5.4.0",
+        "roundcube/plugin-installer": ">=0.1.3"
+    }
+}
