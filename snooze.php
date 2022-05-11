@@ -30,11 +30,25 @@ class snooze extends rcube_plugin
 
         $this->snooze_folder = $rcmail->config->get('snooze_mbox');
 
-        if ($rcmail->task == 'mail' && ($rcmail->action == '' || $rcmail->action == 'show') && $this->snooze_folder) {
-            $this->include_stylesheet($this->local_skin_path() . '/snooze.css');
-            $this->include_script('snooze.js');
+        if ($rcmail->task == 'mail') 
+        {
             $this->add_texts('localization', true);
 
+            // we need to request the snooze headers when fetching emails
+            $this->add_hook('storage_init', [$this, 'storage_init']);
+
+            // handler for ajax request
+            $this->register_action('plugin.snooze_messages', [$this, 'snooze_messages']);
+
+            // handle to show snooze status
+            $this->add_hook('message_body_prefix', [$this, 'on_message_body_prefix']);
+
+            $this->include_stylesheet($this->local_skin_path() . '/snooze.css');
+        }
+
+        if ($rcmail->task == 'mail' && ($rcmail->action == '' || $rcmail->action == 'show') && $this->snooze_folder) 
+        {
+            $this->include_script('snooze.js');
             $this->add_button(
                 [
                     'id'       => 'snoozemenulink',
@@ -67,10 +81,19 @@ class snooze extends rcube_plugin
             $rcmail->output->add_footer($this->create_snooze_menu());
             $rcmail->output->add_footer($this->create_pickatime_dialog());
         }
-        else if ($rcmail->task == 'mail') {
-            // handler for ajax request
-            $this->register_action('plugin.snooze_messages', [$this, 'snooze_messages']);
-        }
+    
+    }
+
+
+    function storage_init($p)
+    {
+        $rcmail = rcmail::get_instance();
+
+        // when fetching mail headers, also get the snooze header
+        // so we can display snooze info on emails
+        $p['fetch_headers'] = $p['fetch_headers'] . ' ROUNDCUBE-SNOOZE';
+
+        return $p;
     }
 
     /**
@@ -89,7 +112,7 @@ class snooze extends rcube_plugin
 
         $intervals = [ 
             'latertoday', 'tomorrow', 'laterthisweek', 'thisweekend',
-            'nextweek', 'nextweekend', 'pickatime'
+            'nextweek', 'nextweekend', 'pickatime', 'unsnooze'
         ];
 
         foreach ($intervals as $type) {
@@ -157,6 +180,56 @@ class snooze extends rcube_plugin
         return $p;
     }
 
+
+    function on_message_body_prefix($p)
+    {
+        $rcmail = rcmail::get_instance();
+
+        $message = $p['message'];
+
+        // Only display snoozed headers on the first part
+        if ($message->parts[0] == $p['part'])
+        {
+            $snooze = self::parse_snooze_header($message->headers->others['roundcube-snooze']);
+            if ($snooze)
+            {
+                if ($message->folder == $this->snooze_folder)
+                {
+                    // In the snooze folder, show "Snoozed" until message
+                    $mbox = rcube::JQ($rcmail->output->get_env('mailbox'));
+                    $uid = rcube::JQ($rcmail->output->get_env('uid'));
+        
+                    // Work out date string
+                    $datestr = $rcmail->format_date($snooze['till'], $rcmail->action == 'print' ? $rcmail->config->get('date_long', 'x') : null);
+
+                    // Create div with snoozed message and unsnooze button
+                    $p['prefix'] .= html::div('snoozebox', 
+                        "Snoozed until $datestr. "
+                        .html::a(
+                            [
+                                'onclick' => "return rcmail.command('snooze.unsnooze', {_mbox:'$mbox', _uid:'$uid'})",
+                                'href' => '#', 
+                                'class' => 'button unsnooze',
+                            ],
+                            rcube::Q($this->gettext('unsnooze'))
+                        )
+                    );
+                }
+                else if ($snooze['woken'])
+                {
+                    // Work out date string
+                    $datestr = $rcmail->format_date($snooze['snoozed'], $rcmail->action == 'print' ? $rcmail->config->get('date_long', 'x') : null);
+
+                    // Create div with snoozed message and unsnooze button
+                    $p['prefix'] .= html::div('snoozebox', 
+                        "Snoozed $datestr. "
+                    );
+                }
+            }
+        }
+        return $p;
+    }
+
     /**
      * Helper method to find the snooze folder in the mailbox tree
      */
@@ -186,165 +259,83 @@ class snooze extends rcube_plugin
         $rcmail = rcmail::get_instance();
 
         // only process ajax requests
-        if (!$rcmail->output->ajax_call) {
+        if (!$rcmail->output->ajax_call) 
             return;
-        }
-/*
-        $rcmail->output->show_message(
-            rcube_utils::get_input_value('snooze_till', rcube_utils::INPUT_POST),
-            "confirmation");
-        $rcmail->output->send();
-        return;
-*/
 
-        // Get the snooze time from posted data
-        $snooze_till = (new DateTime(
-            rcube_utils::get_input_value('snooze_till', rcube_utils::INPUT_POST),
-            new DateTimeZone($rcmail->config->get('timezone'))
-        ))->format("U");
-
-        // Work out the snooze tag
-        $snoozed_at = (new DateTime())->format("U");
-        $snooze_tag = 'SNOOZED_AT_'.$snoozed_at.'_TILL_'.$snooze_till;
-
+        // Need some strings
         $this->add_texts('localization');
 
-        $storage        = $rcmail->get_storage();
-        $delimiter      = $storage->get_hierarchy_delimiter();
-        $threading      = (bool) $storage->get_threading();
-        $search_request = rcube_utils::get_input_value('_search', rcube_utils::INPUT_GPC);
-        $from_show_action = !empty($_POST['_from']) && $_POST['_from'] == 'show';
+        // Get the snooze time from posted data
+        $snooze_till = rcube_utils::get_input_value('snooze_till', rcube_utils::INPUT_POST);
 
-        // count messages before changing anything
-        $old_count = 0;
-        if (!$from_show_action) {
-            $old_count = $storage->count(null, $threading ? 'THREADS' : 'ALL');
+        // Convert to PHP date
+        if ($snooze_till != "unsnooze")
+        {
+            // Convert to PHP date
+            $snooze_till = (new DateTime(
+                rcube_utils::get_input_value('snooze_till', rcube_utils::INPUT_POST),
+                new DateTimeZone($rcmail->config->get('timezone'))
+            ))->format("D, d M Y H:i:s O");
+
+            // Work out the snooze tag
+            $snoozed_at = (new DateTime())->format("D, d M Y H:i:s O");
+            $snooze_tag = 'snoozed at '.$snoozed_at.' until '.$snooze_till;
+            $to_mbox = $this->snooze_folder;
+        }
+        else
+        {
+            $snooze_tag = null;
+            $to_mbox = "INBOX";
         }
 
-        $sort_col = rcmail_action_mail_index::sort_column();
-        $sort_ord = rcmail_action_mail_index::sort_order();
-        $count    = 0;
-        $uids     = null;
-
-        // this way response handler for 'move' action will be executed
-        $rcmail->action = 'move';
-        $this->result   = [
-            'error'        => false,
-            'sources'      => [],
-            'destinations' => [],
-        ];
 
         // Snooze messages
+        $error = false;
+        $folders = [ $to_mbox ];
         foreach (rcmail::get_uids(null, null, $multifolder, rcube_utils::INPUT_POST) as $mbox => $uids) 
         {
-            $count += $this->snooze_messages_worker($uids, $mbox, $this->snooze_folder, $snooze_tag);
-        }
-
-        if ($this->result['error']) {
-            if (!$from_show_action) {
-                $rcmail->output->command('list_mailbox');
+            $folders[] = $from_mbox;
+            if (!$this->snooze_messages_worker($uids, $mbox, $to_mbox, $snooze_tag))
+            {
+                $error = true;
             }
-
-            $rcmail->output->show_message($this->gettext('snoozeerror'), 'warning');
-            $rcmail->output->send();
-        }
-
-        if (!empty($_POST['_refresh'])) {
-            // FIXME: send updated message rows instead of reloading the entire list
-            $rcmail->output->command('refresh_list');
-            $addrows = false;
-        }
-        else {
-            $addrows = true;
-        }
-
-        // refresh saved search set after moving some messages
-        if ($search_request && $rcmail->storage->get_search_set()) {
-            $_SESSION['search'] = $rcmail->storage->refresh_search();
-        }
-
-        if ($from_show_action) {
-            if ($next = rcube_utils::get_input_value('_next_uid', rcube_utils::INPUT_GPC)) {
-                $rcmail->output->command('show_message', $next);
-            }
-            else {
-                $rcmail->output->command('command', 'list');
-            }
-
-            $rcmail->output->send();
-        }
-
-        $mbox           = $storage->get_folder();
-        $msg_count      = $storage->count(null, $threading ? 'THREADS' : 'ALL');
-        $exists         = $storage->count($mbox, 'EXISTS', true);
-        $page_size      = $storage->get_pagesize();
-        $page           = $storage->get_page();
-        $pages          = ceil($msg_count / $page_size);
-        $nextpage_count = $old_count - $page_size * $page;
-        $remaining      = $msg_count - $page_size * ($page - 1);
-        $quota_root     = $multifolder ? $this->result['sources'][0] : 'INBOX';
-        $jump_back      = false;
-
-        // jump back one page (user removed the whole last page)
-        if ($page > 1 && $remaining == 0) {
-            $page -= 1;
-            $storage->set_page($page);
-            $_SESSION['page'] = $page;
-            $jump_back = true;
         }
 
         // update unread messages counts for all involved folders
-        foreach ($this->result['sources'] as $folder) {
+        foreach ($folders as $folder) 
+        {
             rcmail_action_mail_index::send_unread_count($folder, true);
         }
 
-        // update message count display
-        $rcmail->output->set_env('messagecount', $msg_count);
-        $rcmail->output->set_env('current_page', $page);
-        $rcmail->output->set_env('pagecount', $pages);
-        $rcmail->output->set_env('exists', $exists);
-        $rcmail->output->command('set_quota', rcmail_action::quota_content(null, $quota_root));
-        $rcmail->output->command('set_rowcount', rcmail_action_mail_index::get_messagecount_text($msg_count), $mbox);
-
-        if ($threading) {
-            $count = rcube_utils::get_input_value('_count', rcube_utils::INPUT_POST);
-        }
-
-        // add new rows from next page (if any)
-        if ($addrows && $count && $uids != '*' && ($jump_back || $nextpage_count > 0)) {
-            // #5862: Don't add more rows than it was on the next page
-            $count = $jump_back ? null : min($nextpage_count, $count);
-
-            $a_headers = $storage->list_messages($mbox, null, $sort_col, $sort_ord, $count);
-
-            rcmail_action_mail_index::js_message_list($a_headers, false);
-        }
-
-        $rcmail->output->show_message($this->gettext('snoozed'), 'confirmation');
-
-        /*
-        if (!$read_on_move) {
-            foreach ($this->result['destinations'] as $folder) {
-                rcmail_action_mail_index::send_unread_count($folder, true);
+        // Refresh list
+        if ($from_show_action) 
+        {
+            if ($next = rcube_utils::get_input_value('_next_uid', rcube_utils::INPUT_GPC)) 
+            {
+                $rcmail->output->command('show_message', $next);
+            }
+            else 
+            {
+                $rcmail->output->command('command', 'list');
             }
         }
-        */
-
-        // send response
-        $rcmail->output->send();
-    }
-
-    private static function parse_snooze_tag($tag)
-    {
-        if (preg_match("/^SNOOZED_AT_(\d+)_TILL_(\d+)$/", $tag, $matches))
+        else
         {
-            return [
-                'snoozed' => $matches[1],
-                'till' => $matches[2],
-            ];
+            $rcmail->output->command('refresh_list');
+        }
+
+        // Show result
+        if ($error)
+        {
+            $rcmail->output->show_message($this->gettext('snoozeerror'), 'warning');
         }
         else
-            return false;
+        {
+            $rcmail->output->show_message($this->gettext('snoozed'), 'confirmation');
+        }
+
+        // Done
+        $rcmail->output->send();
     }
 
     /**
@@ -352,48 +343,121 @@ class snooze extends rcube_plugin
      */
     private function snooze_messages_worker($uids, $from_mbox, $to_mbox, $snooze_tag)
     {
+        // Get storage
         $storage = rcmail::get_instance()->get_storage();
 
-        // Remove any existing SNOOZED tags
-        $uids2 = array_replace([], $uids);
-        if ($uids2 === '*') 
+        // Get the actual UIDs
+        if ($uids === '*') 
         {
-            $index = $imap->index($mbox, null, null, true);
-            $uids2  = $index->get();
+            $index = $storage->index($from_mbox, null, null, true);
+            $uids  = $index->get();
         }
-        foreach ($uids2 as $uid) 
+
+        // For each uid, create a copy of the message, adding (or removing) the snooze header
+        foreach ($uids as $uid) 
         {
-            $headers = $storage->get_message_headers($uid);
-            $flags = array_keys($headers->flags);
-            $snoozed_flags = array_filter($flags, function($tag) {
-                return self::parse_snooze_tag($tag) !== false;
-            });
-            foreach ($snoozed_flags as $flag)
+            // Write the body to the file and the headers to a variable
+            $path   = rcube_utils::temp_filename('bounce');
+            if ($fp = fopen($path, 'w')) 
             {
-                $storage->set_flag($uid, "UN$flag", $from_mbox, true);
+                // Get message body and headers
+                stream_filter_register('bounce_source', 'rcmail_bounce_stream_filter');
+                stream_filter_append($fp, 'bounce_source');
+                $storage->set_folder($from_mbox);
+                $storage->get_raw_body($uid, $fp);
+                fclose($fp);
+
+                // Get message flags
+                $flags = array_keys($storage->get_message_headers($uid)->flags);
+
+                // Work out new set of headers by removing the old snooze headers and 
+                // adding new header (unless unsnoozing in which case we just remove
+                // any old header).
+                $headers_str = rcmail_bounce_stream_filter::$headers;
+                $headers_str = preg_replace("/^RoundCube-Snooze: snoozed at (.+) until (.+)\n?/mi", "", $headers_str);
+                if (substr($headers_str, -1) == "\n")
+                    $headers_str = substr($headers_str, 0, -1);
+                if ($snooze_tag)
+                    $headers_str .= "\nRoundCube-Snooze: $snooze_tag";
+
+                // If headers have changed, re-write the message
+                if ($headers_str != rcmail_bounce_stream_filter::$headers)
+                {
+                    // We could save the message directly to the new folder, but by saving in place
+                    // it checks we have read/write access to the source folder before trying to move
+                    // the message.  This saves accidentally creating two copies of a message in the case
+                    // where we create a copy in the target folder and then can't delete the original.
+
+                    // Replace the original message with modified message
+                    $new_uid = $storage->save_message($from_mbox, $path, $headers_str, true, $flags);
+                    if (!$new_uid)
+                        return false;
+                    $storage->delete_message($uid, $from_mbox);
+
+                    $uid = $new_uid;
+                }
+
+                // Remove temp file
+                @unlink($path);
+
+                // Finally, move the new message to the final place
+                if (!$storage->move_message($new_uid, $to_mbox, $from_mbox))
+                    return false;
             }
+            else
+                return false;
         }
 
-        // Set the snooze tag
-        $storage->set_flag($uids, $snooze_tag, $from_mbox, true);
+        return true;
+    }
 
-        // Don't move message if not necessary
-        if ($from_mbox == $to_mbox)
-            return 0;
-        
-        // move message to target folder
-        if ($storage->move_message($uids, $to_mbox, $from_mbox)) 
+    private static function parse_snooze_header($header)
+    {
+        if (preg_match("/^snoozed at (.+) until ([^;]+)(; woken)?$/", $header, $matches))
         {
-            if (!in_array($from_mbox, $this->result['sources'])) {
-                $this->result['sources'][] = $from_mbox;
-            }
-            if (!in_array($to_mbox, $this->result['destinations'])) {
-                $this->result['destinations'][] = $to_mbox;
+            return [
+                'snoozed' => new DateTime($matches[1]),
+                'till' => new DateTime($matches[2]),
+                'woken' => !!$matches[3],
+            ];
+        }
+        else
+            return false;
+    }
+}
+
+// Copied from program/include/rcmail_resend_mail.php
+class rcmail_bounce_stream_filter extends php_user_filter
+{
+    public static $headers;
+
+    protected $in_body = false;
+
+    public function onCreate()
+    {
+        self::$headers = '';
+    }
+
+    public function filter($in, $out, &$consumed, $closing)
+    {
+        while ($bucket = stream_bucket_make_writeable($in)) {
+            if (!$this->in_body) {
+                self::$headers .= $bucket->data;
+                if (($pos = strpos(self::$headers, "\r\n\r\n")) === false) {
+                    continue;
+                }
+
+                $bucket->data    = substr(self::$headers, $pos + 4);
+                $bucket->datalen = strlen($bucket->data);
+
+                self::$headers = substr(self::$headers, 0, $pos);
+                $this->in_body = true;
             }
 
-            return count($uids);
+            $consumed += $bucket->datalen;
+            stream_bucket_append($out, $bucket);
         }
 
-        $this->result['error'] = true;
+        return PSFS_PASS_ON;
     }
 }

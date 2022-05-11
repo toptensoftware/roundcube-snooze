@@ -21,6 +21,8 @@ $labels['snoozed'] = 'Successfully snoozed';
 $labels['snoozedreload'] = 'Successfully snoozed. Reload the page to see the new snooze folders.';
 $labels['snoozeerror'] = 'Some messages could not be snoozed';
 $labels['snoozefolder'] = 'Snoozed';
+$labels['unsnooze'] = 'Unsnooze';
+$labels['snoozingmessages'] = 'Snoozing message(s)...';
 
 $labels['latertoday'] = "Later today";
 $labels['tomorrow'] = "Tomorrow";

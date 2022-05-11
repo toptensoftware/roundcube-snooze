@@ -17,6 +17,11 @@
 
 if (window.rcmail)
 {
+    let intervals = [
+        'latertoday', 'tomorrow', 'laterthisweek', 'thisweekend',
+        'nextweekend', 'nextweek', 'pickatime'
+    ];
+
     rcmail.addEventListener('init', function (evt)
     {
         // Active?
@@ -30,24 +35,39 @@ if (window.rcmail)
         // Register the various snooze interval commands
         function register_commands()
         {
-            let intervals = [
-                'latertoday', 'tomorrow', 'laterthisweek', 'thisweekend',
-                'nextweekend', 'nextweek', 'pickatime'
-            ];
-
             for (let i = 0; i < intervals.length; i++)
             {
-                let cmd = "snooze." + intervals[i];
-
-                // By adding our command to the list of message commands, they'll get disabled/enabled when
-                // messages selected/unselected by other actions
-                rcmail.env.message_commands.push(cmd);
-
                 // Register commands
-                rcmail.register_command(cmd, function (props, obj, event) { 
-                    snooze_messages(intervals[i]) 
+                rcmail.register_command("snooze." + intervals[i], function (props, obj, event) { 
+                    on_snooze_messages(intervals[i]) 
                 }, rcmail.env.uid);
             }            
+
+            rcmail.env.message_commands.push("snooze.unsnooze");
+            rcmail.register_command("snooze.unsnooze", function(props, obj, event) {
+                on_unsnooze_message(props);
+            }, rcmail.env.uid);
+
+            if (rcmail.message_list) 
+            {
+                rcmail.message_list.addEventListener('select', enable_commands);
+            }
+        }
+
+        function enable_commands(list)
+        {
+            let enabled = list.get_selection(false).length > 0;
+            for (let i = 0; i < intervals.length; i++)
+            {
+                let cmd_enabled = enabled && calculate_snooze_till_time(intervals[i]) != null;
+                if (intervals[i] == "pickatime")
+                    cmd_enabled = enabled;
+
+                // Register commands
+                rcmail.enable_command("snooze." + intervals[i], cmd_enabled);
+            }
+
+            rcmail.enable_command("snooze.unsnooze", enabled && is_snooze_folder());
         }
 
         // Install a handler so that when the snooze menu is opened
@@ -68,6 +88,17 @@ if (window.rcmail)
                     let snooze_interval = this.id.substring(7);
                     if (snooze_interval == "pickatime")
                         return;
+                    if (snooze_interval ==  "unsnooze")
+                    {
+                        // Hide/show the element
+                        if (!is_snooze_folder())
+                            $(this).parent().addClass('hidden');
+                        else
+                            $(this).parent().removeClass('hidden');
+                        return;
+                    }
+
+                    // Work out the snooze time
                     let snooze_till_time = calculate_snooze_till_time(snooze_interval);
 
                     // Hide/show the element
@@ -173,18 +204,33 @@ if (window.rcmail)
                 return true;
             };
         };
+
     
         // Handle for the snooze commands
-        function snooze_messages(snooze_interval)
+        function on_snooze_messages(snooze_interval)
         {
             if (snooze_interval == "pickatime")
             {
                 prompt_snooze_time();
             }
+            else if (snooze_interval == "unsnooze")
+            {
+                snooze_messages_till("unsnooze");
+            }
             else
             {
                 snooze_messages_till(calculate_snooze_till_time(snooze_interval));
             }
+        }
+
+        // Handler for unsnooze command
+        function on_unsnooze_message(props)
+        {
+            if (!props)
+                props = rcmail.selection_post_data();
+
+            props.snooze_till = "unsnooze";
+            send_snooze_command(props);
         }
 
         // Snooze the selected messages
@@ -200,13 +246,19 @@ if (window.rcmail)
         
             // Pass the timestamp
             post_data.snooze_till = php_format_date('d-m-Y H:i', date);
-        
-            // Disable message command buttons until a message is selected
-            rcmail.enable_command(rcmail.env.message_commands, false);
-        
-            // Instruct server to snooze the selected messages
-            rcmail.with_selected_messages('move', post_data, null, 'plugin.snooze_messages');
-        
+
+            // Send it..
+            send_snooze_command(post_data);
+        }
+
+        function send_snooze_command(post_data)
+        {
+            // Display message
+            lock = rcmail.display_message(rcmail.gettext('snooze.snoozingmessages'), 'loading');
+
+            // send request to server
+            rcmail.http_post('plugin.snooze_messages', post_data, lock);
+                  
             // Reset preview
             rcmail.show_contentframe(false);
         }
