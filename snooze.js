@@ -268,22 +268,27 @@ if (window.rcmail)
         // Note the returned date object will be in the user selected time zone even though
         // the date object doesn't support time zones.  If you format the date to a string it 
         // will be the correct result for the user's time zone. (totally confusing I know)
-        function calculate_snooze_till_time(interval)
+        function calculate_snooze_till_time(interval, from)
         {
+            if (!from)
+                from = new Date();
+
             // Get the user selected time zone
             let timezone = rcmail.env.snooze_time_zone;
 
             // Get current time in user's timezone
-            let now = new Date(new Date().toLocaleString("en-US", {timeZone: timezone}));
+            let now = new Date(from.toLocaleString("en-US", {timeZone: timezone}));
             let timeminutes = now.getHours() * 60 + now.getMinutes();
-            let eveningTime = parse_time(rcmail.env.snooze_morning);
-            let morningTime = parse_time(rcmail.env.snooze_evening);
+            let eveningTime = parse_time(rcmail.env.snooze_evening);
+            let morningTime = parse_time(rcmail.env.snooze_morning);
             let dow = now.getDay();
 
             // Calculate when the wake up time should be
             switch (interval)
             {
                 case 'latertoday':
+                    if (timeminutes < morningTime)
+                        return null;
                     if (timeminutes >= eveningTime)
                         return null;
                     else
@@ -291,7 +296,10 @@ if (window.rcmail)
                     return ;
 
                 case 'tomorrow':
-                    return new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, parseInt(morningTime/60), morningTime%60);
+                    if (timeminutes < morningTime)
+                        return new Date(now.getFullYear(), now.getMonth(), now.getDate(), parseInt(morningTime/60), morningTime%60);
+                    else
+                        return new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, parseInt(morningTime/60), morningTime%60);
 
                 case 'laterthisweek':
                 {
