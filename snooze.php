@@ -12,7 +12,7 @@
  */
 class snooze extends rcube_plugin
 {
-    public $task = 'mail';
+    public $task = 'settings|mail';
 
     private $snooze_folder;
     private $folders;
@@ -46,7 +46,10 @@ class snooze extends rcube_plugin
             $this->include_stylesheet($this->local_skin_path() . '/snooze.css');
         }
 
-        if ($rcmail->task == 'mail' && ($rcmail->action == '' || $rcmail->action == 'show') && $this->snooze_folder) 
+        if ($rcmail->task == 'mail' && 
+            ($rcmail->action == '' || $rcmail->action == 'show') 
+            && $this->snooze_folder
+            ) 
         {
             $this->include_script('snooze.js');
             $this->add_button(
@@ -76,10 +79,20 @@ class snooze extends rcube_plugin
             $rcmail->output->set_env('snooze_folder', $this->snooze_folder);
             $rcmail->output->set_env('snooze_time_format', $rcmail->config->get('time_format'));
             $rcmail->output->set_env('snooze_time_zone', $rcmail->config->get('timezone'));
+            $rcmail->output->set_env('snooze_morning', $rcmail->config->get('snooze_morning'));
+            $rcmail->output->set_env('snooze_evening', $rcmail->config->get('snooze_evening'));
 
             // Options menu contents
             $rcmail->output->add_footer($this->create_snooze_menu());
             $rcmail->output->add_footer($this->create_pickatime_dialog());
+        }
+
+        if ($rcmail->task == "settings")
+        {
+            $this->add_hook('preferences_sections_list', [$this, 'on_preferences_sections_list']);
+            $this->add_hook('preferences_list', [$this, 'on_preferences_list']);
+            $this->add_hook('preferences_save', [$this, 'on_preferences_save']);
+            $this->include_stylesheet($this->local_skin_path() . '/snooze.css');
         }
     
     }
@@ -91,7 +104,7 @@ class snooze extends rcube_plugin
 
         // when fetching mail headers, also get the snooze header
         // so we can display snooze info on emails
-        $p['fetch_headers'] = $p['fetch_headers'] . ' ROUNDCUBE-SNOOZE';
+        $p['fetch_headers'] = $p['fetch_headers'] . ' X-Snoozed';
 
         return $p;
     }
@@ -190,7 +203,7 @@ class snooze extends rcube_plugin
         // Only display snoozed headers on the first part
         if ($message->parts[0] == $p['part'])
         {
-            $snooze = self::parse_snooze_header($message->headers->others['roundcube-snooze']);
+            $snooze = self::parse_snooze_header($message->headers->others['x-snoozed']);
             if ($snooze)
             {
                 if ($message->folder == $this->snooze_folder)
@@ -200,7 +213,7 @@ class snooze extends rcube_plugin
                     $uid = rcube::JQ($rcmail->output->get_env('uid'));
         
                     // Work out date string
-                    $datestr = $rcmail->format_date($snooze['till'], $rcmail->action == 'print' ? $rcmail->config->get('date_long', 'x') : null);
+                    $datestr = $rcmail->format_date($snooze['until'], $rcmail->action == 'print' ? $rcmail->config->get('date_long', 'x') : null);
 
                     // Create div with snoozed message and unsnooze button
                     $p['prefix'] .= html::div('snoozebox', 
@@ -218,7 +231,7 @@ class snooze extends rcube_plugin
                 else if ($snooze['woken'])
                 {
                     // Work out date string
-                    $datestr = $rcmail->format_date($snooze['snoozed'], $rcmail->action == 'print' ? $rcmail->config->get('date_long', 'x') : null);
+                    $datestr = $rcmail->format_date($snooze['at'], $rcmail->action == 'print' ? $rcmail->config->get('date_long', 'x') : null);
 
                     // Create div with snoozed message and unsnooze button
                     $p['prefix'] .= html::div('snoozebox', 
@@ -229,6 +242,73 @@ class snooze extends rcube_plugin
         }
         return $p;
     }
+
+
+    // Add preferences section
+    function on_preferences_sections_list($args)
+    {
+        $args['list']['snooze'] = [
+            'id' => 'snooze',
+            'section' => "Snooze",
+        ];
+        return $args;
+    }
+
+    // Add preferences
+    function on_preferences_list($args)
+    {
+        if ($args['section'] != 'snooze') 
+            return $args;
+
+        $rcmail = rcmail::get_instance();
+
+        $this->add_texts('localization');
+
+        // Headings
+        $args['blocks'] = [
+            'main'       => ['name' => rcube::Q($this->gettext('timesOfDay'))],
+        ];
+
+        // Morning time
+        $input    = new html_inputfield([
+                'name'  => 'morningTime',
+                'id'    => 'morningTime',
+                'type'  => 'time',
+                'size'  => 5,
+                'class' => 'form-control'
+        ]);
+        $args['blocks']['main']['options']['morningTime'] = [
+            'title'   => html::label('morningTime', rcube::Q($this->gettext('morningTime'))),
+            'content' => $input->show($rcmail->config->get('snooze_morning'))
+        ];
+
+        // Evening time
+        $input    = new html_inputfield([
+            'name'  => 'eveningTime',
+            'id'    => 'eveningTime',
+            'type'  => 'time',
+            'size'  => 5,
+            'class' => 'form-control'
+        ]);
+        $args['blocks']['main']['options']['eveningTime'] = [
+            'title'   => html::label('eveningTime', rcube::Q($this->gettext('eveningTime'))),
+            'content' => $input->show($rcmail->config->get('snooze_evening'))
+        ];
+
+        return $args;
+    }
+
+    // Save preferences
+    function on_preferences_save($args)
+    {
+        if ($args['section'] == 'snooze')
+        {
+            $args['prefs']['snooze_morning'] = rcube_utils::get_input_value('morningTime', rcube_utils::INPUT_POST);
+            $args['prefs']['snooze_evening'] = rcube_utils::get_input_value('eveningTime', rcube_utils::INPUT_POST);
+        }
+        return $args;
+    }
+
 
     /**
      * Helper method to find the snooze folder in the mailbox tree
@@ -279,7 +359,7 @@ class snooze extends rcube_plugin
 
             // Work out the snooze tag
             $snoozed_at = (new DateTime())->format("D, d M Y H:i:s O");
-            $snooze_tag = 'snoozed at '.$snoozed_at.' until '.$snooze_till;
+            $snooze_tag = "at $snoozed_at;\n    until $snooze_till";
             $to_mbox = $this->snooze_folder;
         }
         else
@@ -368,17 +448,36 @@ class snooze extends rcube_plugin
                 fclose($fp);
 
                 // Get message flags
-                $flags = array_keys($storage->get_message_headers($uid)->flags);
+                $headers = $storage->get_message_headers($uid);
+                $flags = array_keys($headers->flags);
+
+                // Work out where the message should be woken to.
+                // If this message is already in the snoozed folder, then get the original
+                // location from the existing snooze header
+                if ($from_mbox == $this->snooze_folder)
+                {
+                    $old_snooze = self::parse_snooze_header($headers->others['x-snoozed']);
+                    if ($old_snooze && $old_snooze['from'])
+                        $original_mbox = $old_snooze['from'];
+                    else
+                        $original_mbox = $from_mbox;
+                }
+                else
+                    $original_mbox = $from_mbox;
+
+                // Make sure never restoring to the Snoozed folder
+                if ($original_mbox == $this->snooze_folder)
+                    $original_mbox = "INBOX";
 
                 // Work out new set of headers by removing the old snooze headers and 
                 // adding new header (unless unsnoozing in which case we just remove
                 // any old header).
                 $headers_str = rcmail_bounce_stream_filter::$headers;
-                $headers_str = preg_replace("/^RoundCube-Snooze: snoozed at (.+) until (.+)\n?/mi", "", $headers_str);
+                $headers_str = preg_replace("/^X-Snoozed:.*(\n[ \t]+.*)*\n?/im", "", $headers_str);
                 if (substr($headers_str, -1) == "\n")
                     $headers_str = substr($headers_str, 0, -1);
                 if ($snooze_tag)
-                    $headers_str .= "\nRoundCube-Snooze: $snooze_tag";
+                    $headers_str .= "\nX-Snoozed: $snooze_tag;\n    from $original_mbox";
 
                 // If headers have changed, re-write the message
                 if ($headers_str != rcmail_bounce_stream_filter::$headers)
@@ -401,8 +500,11 @@ class snooze extends rcube_plugin
                 @unlink($path);
 
                 // Finally, move the new message to the final place
-                if (!$storage->move_message($new_uid, $to_mbox, $from_mbox))
-                    return false;
+                if ($to_mbox != $from_mbox)
+                {
+                    if (!$storage->move_message($new_uid, $to_mbox, $from_mbox))
+                        return false;
+                }
             }
             else
                 return false;
@@ -413,16 +515,22 @@ class snooze extends rcube_plugin
 
     private static function parse_snooze_header($header)
     {
-        if (preg_match("/^snoozed at (.+) until ([^;]+)(; woken)?$/", $header, $matches))
-        {
-            return [
-                'snoozed' => new DateTime($matches[1]),
-                'till' => new DateTime($matches[2]),
-                'woken' => !!$matches[3],
-            ];
-        }
-        else
+        if (!$header)
             return false;
+
+        // Split parts
+        $result = [];
+        foreach (explode(';', str_replace("\n", " ", $header)) as $kv)
+        {
+            $kv = trim($kv);
+            $spacePos = strpos($kv, ' ');
+            if ($spacePos > 0)
+                $result[substr($kv, 0, $spacePos)] = trim(substr($kv, $spacePos+1));
+            else
+                $result[$kv] = true;
+        }
+
+        return $result;
     }
 }
 

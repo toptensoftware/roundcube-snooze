@@ -23,6 +23,9 @@ $labels['snoozeerror'] = 'Some messages could not be snoozed';
 $labels['snoozefolder'] = 'Snoozed';
 $labels['unsnooze'] = 'Unsnooze';
 $labels['snoozingmessages'] = 'Snoozing message(s)...';
+$labels['timesOfDay'] = 'Times of Day';
+$labels['morningTime'] = 'Morning time:';
+$labels['eveningTime'] = 'Evening time:';
 
 $labels['latertoday'] = "Later today";
 $labels['tomorrow'] = "Tomorrow";

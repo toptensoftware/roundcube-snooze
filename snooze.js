@@ -276,8 +276,8 @@ if (window.rcmail)
             // Get current time in user's timezone
             let now = new Date(new Date().toLocaleString("en-US", {timeZone: timezone}));
             let timeminutes = now.getHours() * 60 + now.getMinutes();
-            let eveningTime = 18 * 60;
-            let morningTime = 8 * 60;
+            let eveningTime = parse_time(rcmail.env.snooze_morning);
+            let morningTime = parse_time(rcmail.env.snooze_evening);
             let dow = now.getDay();
 
             // Calculate when the wake up time should be

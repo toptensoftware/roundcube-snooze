@@ -22,6 +22,10 @@
     font-weight: 900;
 }
 
+.listing.iconized tr.snooze>td.section:before {
+    content: "\f017";
+}
+
 #pickatime-dialog label:not(:first-child) {
     margin-top: 20px;
 }
