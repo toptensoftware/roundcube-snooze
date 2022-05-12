@@ -17,15 +17,18 @@
 $labels = [];
 $labels['buttontext'] = 'Snooze';
 $labels['buttontitle'] = 'Snooze this message';
-$labels['snoozed'] = 'Successfully snoozed';
-$labels['snoozedreload'] = 'Successfully snoozed. Reload the page to see the new snooze folders.';
-$labels['snoozeerror'] = 'Some messages could not be snoozed';
+$labels['snoozedSuccess'] = 'Successfully snoozed';
+$labels['snoozeError'] = 'Some messages could not be snoozed';
 $labels['snoozefolder'] = 'Snoozed';
 $labels['unsnooze'] = 'Unsnooze';
 $labels['snoozingmessages'] = 'Snoozing message(s)...';
 $labels['timesOfDay'] = 'Times of Day';
 $labels['morningTime'] = 'Morning time:';
 $labels['eveningTime'] = 'Evening time:';
+$labels['snoozeUntil'] = 'Snooze until...';
+$labels['snoozedUntil'] = 'Snoozed until ';
+$labels['snoozed'] = 'Snoozed ';
+$labels['snoozeSettings'] = 'Snooze';
 
 $labels['latertoday'] = "Later today";
 $labels['tomorrow'] = "Tomorrow";

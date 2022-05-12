@@ -146,7 +146,7 @@ class snooze extends rcube_plugin
             'aria-hidden' => 'true',
             'data-popup-init' => 'snoozemenu_init',
         ],
-                html::tag('h3', ['id' => 'aria-label-snoozemenu'], "Snooze until...")
+                html::tag('h3', ['id' => 'aria-label-snoozemenu'], $this->gettext('snoozeUntil'))
                 . html::tag('ul', $ul_attr, implode('', $menu))
         );
     }
@@ -200,6 +200,8 @@ class snooze extends rcube_plugin
 
         $message = $p['message'];
 
+        //$this->add_texts('localization');
+
         // Only display snoozed headers on the first part
         if ($message->parts[0] == $p['part'])
         {
@@ -217,7 +219,7 @@ class snooze extends rcube_plugin
 
                     // Create div with snoozed message and unsnooze button
                     $p['prefix'] .= html::div('snoozebox', 
-                        "Snoozed until $datestr. "
+                        $this->gettext('snoozedUntil').$datestr." "
                         .html::a(
                             [
                                 'onclick' => "return rcmail.command('snooze.unsnooze', {_mbox:'$mbox', _uid:'$uid'})",
@@ -235,7 +237,7 @@ class snooze extends rcube_plugin
 
                     // Create div with snoozed message and unsnooze button
                     $p['prefix'] .= html::div('snoozebox', 
-                        "Snoozed $datestr. "
+                        $this->gettext('snoozed').$datestr
                     );
                 }
             }
@@ -247,9 +249,10 @@ class snooze extends rcube_plugin
     // Add preferences section
     function on_preferences_sections_list($args)
     {
+        $this->add_texts('localization');
         $args['list']['snooze'] = [
             'id' => 'snooze',
-            'section' => "Snooze",
+            'section' => $this->gettext('snoozeSettings')
         ];
         return $args;
     }
@@ -407,11 +410,11 @@ class snooze extends rcube_plugin
         // Show result
         if ($error)
         {
-            $rcmail->output->show_message($this->gettext('snoozeerror'), 'warning');
+            $rcmail->output->show_message($this->gettext('snoozeError'), 'warning');
         }
         else
         {
-            $rcmail->output->show_message($this->gettext('snoozed'), 'confirmation');
+            $rcmail->output->show_message($this->gettext('snoozedSuccess'), 'confirmation');
         }
 
         // Done
