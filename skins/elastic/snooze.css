@@ -30,10 +30,9 @@
     margin-top: 20px;
 }
 
-.snoozebox {
-    padding: 5px;
-    margin: 0;
-    margin-bottom:10px;
-    background-color: #fcfcfc;
-    border: 1px solid #f4f4f4;
+.snoozeinfo {
+}
+
+.snoozewoken {
+    color: orange;
 }

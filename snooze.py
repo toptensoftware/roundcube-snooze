@@ -1,3 +1,16 @@
+# snooze.py
+# Copyright (C) Topten Software
+#
+# This is the accompanying script for the snooze plugin that's responsible
+# for waking previously snoozed emails when the time comes.  It should
+# be run periodically to wake currently snoozed emails.
+#
+# eg: crontab entry to run every minute
+#
+# * * * * * python3 /usr/local/lib/roundcubemail/plugins/snooze/snooze.py
+#
+# Run with --help for options
+
 import re
 import subprocess
 import datetime
@@ -9,7 +22,7 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 # Filter that watches the output from doveadm fetch and creates a temp file with the
-# fetch email headers and body.  Also adds the "woken" flag to the snooze header.
+# fetched email headers and body.  It also adds the "woken" flag to the snooze header.
 class SnoozeFilter:
 
     def __init__(self, user):
@@ -133,10 +146,10 @@ def process_user(user, folder):
                 if timestamp < now:
                     expired_messages.append({ 'uid': uid, 'from': snooze['from']})
 
-    # Ask for all messages with snooze header
+    # Ask dovecot for all messages with a snooze header
     proc = subprocess.Popen(f"doveadm fetch -u {user} \'uid hdr.x-snoozed\' mailbox {folder}", shell=True, stdout=subprocess.PIPE)
 
-    # Read lines from dovadm
+    # Read lines from dovecot
     uid = None
     snooze_hdr = None
     while True:
@@ -244,7 +257,7 @@ parser.add_argument('--users', nargs = '+', metavar = "USER", help = "an explici
 parser.add_argument('--exclude', nargs = '+', metavar = "USER", help = "users to exclude")
 args = parser.parse_args()
 
-# Can't specify by users and exclude
+# Can't use both --users and --exclude options
 if args.users and args.exclude:
     sys.stderr.write("Options --users or --exclude can't be used together")
     os._exit(2)

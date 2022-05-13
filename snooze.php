@@ -2,91 +2,93 @@
 
 /**
  * Snooze
+ * Copyright (C) Topten Software
+ * 
+ * Put your emails to sleep.
  *
- * Plugin that adds a new button to the mailbox toolbar
- * to move messages to a (user selectable) snooze folder.
- *
- * @version 3.2
+ * @version 1.0
  * @license GNU GPLv3+
- * @author Andre Rodier, Thomas Bruederli, Aleksander Machniak
+ * @author Brad Robinson
  */
 class snooze extends rcube_plugin
 {
     public $task = 'settings|mail';
-
     private $snooze_folder;
-    private $folders;
-    private $result;
 
-
-    /**
-     * Plugin initialization.
-     */
+    // Initialize plugin
     function init()
     {
         $rcmail = rcmail::get_instance();
 
+        // Load config, get snooze folder, quit if not set
         $this->load_config();
-
         $this->snooze_folder = $rcmail->config->get('snooze_mbox');
+        if (!$this->snooze_folder)
+            return;
 
+        // Mail task?
         if ($rcmail->task == 'mail') 
         {
+            // Strings
             $this->add_texts('localization', true);
 
-            // we need to request the snooze headers when fetching emails
-            $this->add_hook('storage_init', [$this, 'storage_init']);
+            // Setup to request the snooze headers when fetching emails
+            $this->add_hook('storage_init', [$this, 'on_storage_init']);
 
-            // handler for ajax request
-            $this->register_action('plugin.snooze_messages', [$this, 'snooze_messages']);
+            // Handler for snooze action request
+            $this->register_action('plugin.snooze_messages', [$this, 'on_snooze_messages']);
 
-            // handle to show snooze status
-            $this->add_hook('message_body_prefix', [$this, 'on_message_body_prefix']);
-
+            // Styles
             $this->include_stylesheet($this->local_skin_path() . '/snooze.css');
+
+            // Hook to show snooze status in message header area
+            if ($rcmail->action == 'show' || $rcmail->action == 'preview') 
+            {
+                $this->add_hook('template_object_messageheaders', [$this, 'on_template_object_messageheaders']);
+                $this->add_hook('message_load', [$this, 'on_message_load']);
+            }
+
+            // Add the snooze button
+            if ($rcmail->action == '' || $rcmail->action == 'show') 
+            {
+                $this->include_script('snooze.js');
+                $this->add_button(
+                    [
+                        'id'       => 'snoozemenulink',
+                        'type'     => 'link',
+                        'label'    => 'buttontext',
+                        'href'     => '#',
+                        'class'    => 'button buttonPas snooze disabled',
+                        'classact' => 'button snooze',
+                        'width'    => 32,
+                        'height'   => 32,
+                        'title'    => 'buttontitle',
+                        'domain'   => $this->ID,
+                        'innerclass' => 'inner',
+                        'aria-owns'     => 'snoozemenu',
+                        'aria-haspopup' => 'true',
+                        'aria-expanded' => 'false',
+                        'data-popup' => 'snoozemenu',
+                    ],
+                    'toolbar');
+
+                // Register hook to localize the snooze folder
+                $this->add_hook('render_mailboxlist', [$this, 'on_render_mailboxlist']);
+
+                // Send environment variables for client
+                $rcmail->output->set_env('snooze_folder', $this->snooze_folder);
+                $rcmail->output->set_env('snooze_time_format', $rcmail->config->get('time_format'));
+                $rcmail->output->set_env('snooze_time_zone', $rcmail->config->get('timezone'));
+                $rcmail->output->set_env('snooze_morning', $rcmail->config->get('snooze_morning'));
+                $rcmail->output->set_env('snooze_evening', $rcmail->config->get('snooze_evening'));
+
+                // Add other GUI bits
+                $rcmail->output->add_footer($this->create_snooze_menu());
+                $rcmail->output->add_footer($this->create_pickatime_dialog());
+            }
         }
 
-        if ($rcmail->task == 'mail' && 
-            ($rcmail->action == '' || $rcmail->action == 'show') 
-            && $this->snooze_folder
-            ) 
-        {
-            $this->include_script('snooze.js');
-            $this->add_button(
-                [
-                    'id'       => 'snoozemenulink',
-                    'type'     => 'link',
-                    'label'    => 'buttontext',
-                    'href'     => '#',
-                    'class'    => 'button buttonPas snooze disabled',
-                    'classact' => 'button snooze',
-                    'width'    => 32,
-                    'height'   => 32,
-                    'title'    => 'buttontitle',
-                    'domain'   => $this->ID,
-                    'innerclass' => 'inner',
-                    'aria-owns'     => 'snoozemenu',
-                    'aria-haspopup' => 'true',
-                    'aria-expanded' => 'false',
-                    'data-popup' => 'snoozemenu',
-                ],
-                'toolbar');
-
-            // register hook to localize the snooze folder
-            $this->add_hook('render_mailboxlist', [$this, 'render_mailboxlist']);
-
-            // set env variables for client
-            $rcmail->output->set_env('snooze_folder', $this->snooze_folder);
-            $rcmail->output->set_env('snooze_time_format', $rcmail->config->get('time_format'));
-            $rcmail->output->set_env('snooze_time_zone', $rcmail->config->get('timezone'));
-            $rcmail->output->set_env('snooze_morning', $rcmail->config->get('snooze_morning'));
-            $rcmail->output->set_env('snooze_evening', $rcmail->config->get('snooze_evening'));
-
-            // Options menu contents
-            $rcmail->output->add_footer($this->create_snooze_menu());
-            $rcmail->output->add_footer($this->create_pickatime_dialog());
-        }
-
+        // Add settings
         if ($rcmail->task == "settings")
         {
             $this->add_hook('preferences_sections_list', [$this, 'on_preferences_sections_list']);
@@ -94,24 +96,18 @@ class snooze extends rcube_plugin
             $this->add_hook('preferences_save', [$this, 'on_preferences_save']);
             $this->include_stylesheet($this->local_skin_path() . '/snooze.css');
         }
-    
     }
 
-
-    function storage_init($p)
+    // Storage initializer callback
+    function on_storage_init($p)
     {
-        $rcmail = rcmail::get_instance();
-
-        // when fetching mail headers, also get the snooze header
+        // When fetching mail headers, also get the snooze header
         // so we can display snooze info on emails
         $p['fetch_headers'] = $p['fetch_headers'] . ' X-Snoozed';
-
         return $p;
     }
 
-    /**
-     * Init compose UI (add task button and the menu)
-     */
+    // Create the snooze menu
     private function create_snooze_menu()
     {
         $menu    = [];
@@ -151,7 +147,7 @@ class snooze extends rcube_plugin
         );
     }
 
-
+    // Create the pick a time dialog
     private function create_pickatime_dialog()
     {
         $rcmail = rcmail::get_instance();
@@ -172,12 +168,9 @@ class snooze extends rcube_plugin
         );
     }
 
-
-
-    /**
-     * Hook to give the snooze folder a localized name in the mailbox list
-     */
-    function render_mailboxlist($p)
+    // Callback hook when rendering mailbox list
+    // (copied from archive plugin)
+    function on_render_mailboxlist($p)
     {
         // set localized name for the configured snooze folder
         if ($this->snooze_folder && !rcmail::get_instance()->config->get('show_real_foldernames')) {
@@ -193,18 +186,41 @@ class snooze extends rcube_plugin
         return $p;
     }
 
-
-    function on_message_body_prefix($p)
+    // Helper method to find the snooze folder in the mailbox tree
+    // (copied from archive plugin)
+    private function _mod_folder_name(&$list, $folder, $new_name)
     {
-        $rcmail = rcmail::get_instance();
+        foreach ($list as $idx => $item) {
+            if ($item['id'] == $folder) {
+                $list[$idx]['name'] = $new_name;
+                return true;
+            }
+            else if (!empty($item['folders'])) {
+                if ($this->_mod_folder_name($list[$idx]['folders'], $folder, $new_name)) {
+                    return true;
+                }
+            }
+        }
 
-        $message = $p['message'];
+        return false;
+    }
 
-        //$this->add_texts('localization');
+    // Callback hook for message_load
+    function on_message_load($p)
+    {
+        // Store the object so we have access to 
+        // it in on_template_object_messageheaders
+        $this->message = $p['object'];
+    }
 
-        // Only display snoozed headers on the first part
-        if ($message->parts[0] == $p['part'])
+    // Callback hook to render the message headers
+    function on_template_object_messageheaders($p)
+    {
+        if ($p['class'] == 'header-headers')
         {
+            $message = $this->message;
+            $rcmail = rcmail::get_instance();
+
             $snooze = self::parse_snooze_header($message->headers->others['x-snoozed']);
             if ($snooze)
             {
@@ -218,7 +234,7 @@ class snooze extends rcube_plugin
                     $datestr = $rcmail->format_date($snooze['until'], $rcmail->action == 'print' ? $rcmail->config->get('date_long', 'x') : null);
 
                     // Create div with snoozed message and unsnooze button
-                    $p['prefix'] .= html::div('snoozebox', 
+                    $p['content'] .= html::div('snoozeinfo', 
                         $this->gettext('snoozedUntil').$datestr." "
                         .html::a(
                             [
@@ -236,17 +252,17 @@ class snooze extends rcube_plugin
                     $datestr = $rcmail->format_date($snooze['at'], $rcmail->action == 'print' ? $rcmail->config->get('date_long', 'x') : null);
 
                     // Create div with snoozed message and unsnooze button
-                    $p['prefix'] .= html::div('snoozebox', 
+                    $p['content'] .= html::div('snoozeinfo snoozewoken', 
                         $this->gettext('snoozed').$datestr
                     );
                 }
             }
         }
+
         return $p;
     }
 
-
-    // Add preferences section
+    // Callback hook to create a new preferences section
     function on_preferences_sections_list($args)
     {
         $this->add_texts('localization');
@@ -257,7 +273,7 @@ class snooze extends rcube_plugin
         return $args;
     }
 
-    // Add preferences
+    // Callback hook to add the preference options
     function on_preferences_list($args)
     {
         if ($args['section'] != 'snooze') 
@@ -301,7 +317,7 @@ class snooze extends rcube_plugin
         return $args;
     }
 
-    // Save preferences
+    // Callback hook to save preferences
     function on_preferences_save($args)
     {
         if ($args['section'] == 'snooze')
@@ -312,32 +328,8 @@ class snooze extends rcube_plugin
         return $args;
     }
 
-
-    /**
-     * Helper method to find the snooze folder in the mailbox tree
-     */
-    private function _mod_folder_name(&$list, $folder, $new_name)
-    {
-        foreach ($list as $idx => $item) {
-            if ($item['id'] == $folder) {
-                $list[$idx]['name'] = $new_name;
-                return true;
-            }
-            else if (!empty($item['folders'])) {
-                if ($this->_mod_folder_name($list[$idx]['folders'], $folder, $new_name)) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * Plugin action to move the submitted list of messages to the snooze subfolders
-     * according to the user settings and their headers.
-     */
-    function snooze_messages()
+    // Main snooze action handler
+    function on_snooze_messages()
     {
         $rcmail = rcmail::get_instance();
 
@@ -368,24 +360,22 @@ class snooze extends rcube_plugin
         else
         {
             $snooze_tag = null;
-            $to_mbox = "INBOX";
+            $to_mbox = null;
         }
 
-
-        // Snooze messages
+        // Snooze the messages
         $error = false;
-        $folders = [ $to_mbox ];
+        $folders = [];
         foreach (rcmail::get_uids(null, null, $multifolder, rcube_utils::INPUT_POST) as $mbox => $uids) 
         {
-            $folders[] = $from_mbox;
-            if (!$this->snooze_messages_worker($uids, $mbox, $to_mbox, $snooze_tag))
+            if (!$this->snooze_messages_worker($uids, $mbox, $to_mbox, $snooze_tag, $folders))
             {
                 $error = true;
             }
         }
 
         // update unread messages counts for all involved folders
-        foreach ($folders as $folder) 
+        foreach (array_keys($folders) as $folder) 
         {
             rcmail_action_mail_index::send_unread_count($folder, true);
         }
@@ -421,10 +411,8 @@ class snooze extends rcube_plugin
         $rcmail->output->send();
     }
 
-    /**
-     * Move messages from one folder to another and mark as read if needed
-     */
-    private function snooze_messages_worker($uids, $from_mbox, $to_mbox, $snooze_tag)
+    // Move messages to/from snoozed folder
+    private function snooze_messages_worker($uids, $from_mbox, $to_mbox, $snooze_tag, &$folders)
     {
         // Get storage
         $storage = rcmail::get_instance()->get_storage();
@@ -454,12 +442,20 @@ class snooze extends rcube_plugin
                 $headers = $storage->get_message_headers($uid);
                 $flags = array_keys($headers->flags);
 
+                // Parse old snooze header
+                $old_snooze = self::parse_snooze_header($headers->others['x-snoozed']);
+
+                // If unsnoozing, return to the folder it came from
+                if (!$to_mbox && $old_snooze)
+                    $to_mbox = $old_snooze['from'];
+                if (!$to_mbox)
+                    $to_mbox = "INBOX";
+
                 // Work out where the message should be woken to.
                 // If this message is already in the snoozed folder, then get the original
                 // location from the existing snooze header
                 if ($from_mbox == $this->snooze_folder)
                 {
-                    $old_snooze = self::parse_snooze_header($headers->others['x-snoozed']);
                     if ($old_snooze && $old_snooze['from'])
                         $original_mbox = $old_snooze['from'];
                     else
@@ -502,6 +498,10 @@ class snooze extends rcube_plugin
                 // Remove temp file
                 @unlink($path);
 
+                // Update affected folder map
+                $folders[$to_mbox] = true;
+                $folders[$from_mbox] = true;
+
                 // Finally, move the new message to the final place
                 if ($to_mbox != $from_mbox)
                 {
@@ -516,6 +516,7 @@ class snooze extends rcube_plugin
         return true;
     }
 
+    // Helper to parse the snooze header
     private static function parse_snooze_header($header)
     {
         if (!$header)
