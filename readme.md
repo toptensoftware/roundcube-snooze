@@ -46,7 +46,7 @@ Installation:
     $config['plugins'] = array('snooze');
     ```
 
-4. Configure a crontab job to run the server-side wake up script:
+4. Configure a cron job to run the server-side wake up script:
 
     ```
     crontab -e

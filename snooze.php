@@ -487,7 +487,7 @@ class snooze extends rcube_plugin
                     // where we create a copy in the target folder and then can't delete the original.
 
                     // Replace the original message with modified message
-                    $new_uid = $storage->save_message($from_mbox, $path, $headers_str, true, $flags);
+                    $new_uid = $storage->save_message($from_mbox, $path, $headers_str, true, $flags, $headers->internaldate);
                     if (!$new_uid)
                         return false;
                     $storage->delete_message($uid, $from_mbox);

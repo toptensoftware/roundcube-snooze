@@ -144,14 +144,21 @@ def process_user(user, folder):
             if snooze:
                 timestamp = parsedate_to_datetime(snooze['until']).timestamp()
                 if timestamp < now:
-                    expired_messages.append({ 'uid': uid, 'from': snooze['from']})
+                    expired_messages.append({ 
+                        'uid': uid, 
+                        'flags': flags, 
+                        'message_id': message_id,
+                        'from': snooze['from']}
+                        )
 
     # Ask dovecot for all messages with a snooze header
-    proc = subprocess.Popen(f"doveadm fetch -u {user} \'uid hdr.x-snoozed\' mailbox {folder}", shell=True, stdout=subprocess.PIPE)
+    proc = subprocess.Popen(f"doveadm fetch -u {user} \'uid flags hdr.x-snoozed hdr.message-id\' mailbox {folder}", shell=True, stdout=subprocess.PIPE)
 
     # Read lines from dovecot
     uid = None
     snooze_hdr = None
+    flags = None
+    message_id = None
     while True:
 
         # Read a line
@@ -163,6 +170,18 @@ def process_user(user, folder):
         match = re.search("^uid:\s(.*)$", line)
         if match:
             uid = match.group(1)
+            continue
+
+        # If it's the the 'flags:' line, capture them
+        match = re.search("^flags:\s(.*)$", line)
+        if match:
+            flags = ' '.join([x for x in match.group(1).split(' ') if x != '\Seen'])
+            continue
+
+        # If it's the the 'flags:' line, capture them
+        match = re.search("^hdr.message-id:\s(.*)$", line)
+        if match:
+            message_id = match.group(1)
             continue
 
         # If it's the snooze header, capture it
@@ -180,6 +199,7 @@ def process_user(user, folder):
         process_header(snooze_hdr)
         snooze_hdr = None
         uid = None
+        flags = None
 
     # Proces any trailing snooze header
     process_header(snooze_hdr)
@@ -208,6 +228,10 @@ def process_user(user, folder):
 
         # Import from temp file
         proc = subprocess.run(['doveadm', 'save', '-u', user, '-m', msg['from'], filter.getFileName()], check=False)
+
+        # Set flags
+        if msg['message_id']:
+                subprocess.run(['doveadm', 'flags', 'replace', '-u', user,  msg['flags'], 'mailbox', msg['from'], 'HEADER', 'Message-ID', msg['message_id'] ], check=False)
 
         # If import failed and trying to import to a mailbox other than the INBOX, try again using INBOX
         if proc.returncode != 0 and msg['from'].upper() != 'INBOX':
