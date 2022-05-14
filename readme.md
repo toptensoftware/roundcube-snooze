@@ -18,7 +18,9 @@ Please note:
 * Only DoveCot IMAP back ends are supported although others might work if you're able to create an appropriate wake-up script. 
 * Anything other than the above and you're on your own.
 
-**IMPORTANT** This plugin re-writes email messages and can  change DoveCot's internally stored date (ie: the arrival time) for the message.  This might violate regulatory and compliance rules of some companies and organisations.  *It's up to you to check this*.
+**IMPORTANT** This plugin re-writes email messages and can change DoveCot's internally stored date (ie: the arrival time) for the
+message. If your company/organisation has strict regulatory or compliance rules then *it's up to you* to check if this is allowed.
+(It probably won't but, you've been told).
 
 Installation:
 
@@ -167,6 +169,9 @@ For emails that are due to be woken:
 
 * Requires Elastic skin, but will accept a pull requests for other skins.
 * Currently only available in English, but will accept a pull requests for translations.
+* If a message without a "Message-ID" header is slept, upon waking it will have lost all its IMAP flags.  This is because
+  doveadm doesn't provide a mechanism to learn the UID of the newly saved message.  To restore the flags, the wake script
+  uses the message-id instead - and if the message doesn't have a message-id it can't easily restore those flags.
 
 ## License
 
