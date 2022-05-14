@@ -79,8 +79,7 @@ Snoozing an email:
 
 3. From the toolbar, click the "Snooze" button and choose what time the message should be woken.
 
-4. When the snooze time arrives, the email will be automatically moved back to its
-    original mailbox (or the inbox if that mailbox no longer exists).
+4. When the snooze time arrives, the email will be automatically moved back to its original mailbox (or the inbox if that mailbox no longer exists).
 
 Notes:
 
@@ -88,8 +87,12 @@ Notes:
   added to the header when viewing the message showing when the message is due to 
   be woken.
 
+  ![Snoozed Header](docs/snoozed_message.png)
+
 * When an email is woken, it will be moved back to its original mailbox and a note
   shown in the message header saying when it was originally snoozed.
+
+  ![Woken Header](docs/woken_message.png)
 
 * You can manually unsnooze a snoozed message via the unsnooze command (either from
   the message header, or the toolbar drop down).
@@ -158,9 +161,6 @@ For emails that are due to be woken:
 2. Modify the X-Snoozed header adding the `woken` tag.
 3. Save the message back to its original mailbox (`doveadm save`)
 4. Deleting the original message (`doveadm expunge`)
-
-
-
 
 
 ## Known Issues and Limitations
