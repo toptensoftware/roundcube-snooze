@@ -15,12 +15,14 @@ Prerequistites:
 Please note:
 
 * Other versions of the above may work, but this is the configuration I tested with.  
-* Only DoveCot IMAP back ends are supported although others might work if you're able to create an appropriate wake-up script. 
+* Only DoveCot IMAP back ends are supported although others might work if you're able to create an appropriate wake-up script. (see 
+  [snooze.py](snooze.py) to see how the dovecot version works).
 * Anything other than the above and you're on your own.
 
-**IMPORTANT** This plugin re-writes email messages and can change DoveCot's internally stored date (ie: the arrival time) for the
+**IMPORTANT** This plugin re-writes email messages and can change DoveCot's internally stored date (ie: the arrival time) of the
 message. If your company/organisation has strict regulatory or compliance rules then *it's up to you* to check if this is allowed.
-(It probably won't but, you've been told).
+
+**IMPORTANT** This plugin hasn't yet been heavily tested and should be considered *very experimental*.
 
 Installation:
 
@@ -45,8 +47,11 @@ Installation:
     and add the plugin's name to the active plugins array. eg:
 
     ```php
-    $config['plugins'] = array('snooze');
+    $config['plugins'] = array('plugin1', 'plugin2', /* other plugins */, 'snooze');
     ```
+
+    Tip: place the 'snooze' plugin just after the 'archive' plugin to have the button appear 
+    to the right of the Archive button.
 
 4. Configure a cron job to run the server-side wake up script:
 
@@ -66,8 +71,6 @@ Installation:
     */5 * * * * python3 /usr/local/lib/roundcubemail/plugins/snooze/snooze.py
     ```
 
-    (Obviously, you'll need python3 installed).
-
 5. Optionally, configure dovecot so that each user has a mailbox named `Snoozed`.
     (without this, each user must manually create the mailbox)
 
@@ -81,7 +84,8 @@ Snoozing an email:
 
 3. From the toolbar, click the "Snooze" button and choose what time the message should be woken.
 
-4. When the snooze time arrives, the email will be automatically moved back to its original mailbox (or the inbox if that mailbox no longer exists).
+4. When the snooze time arrives, the email will be automatically moved back to its original
+   mailbox (or the inbox if that mailbox no longer exists).
 
 Notes:
 
@@ -107,13 +111,13 @@ Notes:
 
 ## Configuration
 
-See the `config.in.php` in the plugin directory for configuration options.
+See `config.in.php` in the plugin directory for configuration options.
 
 Run `python3 snooze.py --help` for options controlling the wake up script.
 
 ## How it Works
 
-The plugin stores all snooze information in a custom e-mail header named `X-Snoozed` in the following format:
+The plugin stores all snooze information in a custom e-mail header named `X-Snoozed` with the following format:
 
 ```
 X-Snoozed: at Fri, 13 May 2022 10:16:56 +1000;
@@ -127,7 +131,7 @@ Where:
 * `at` = the time the message was snoozed
 * `until` = the time the message is scheduled to be woken
 * `from` = the mailbox the message was in before being snoozed
-* `woken` = present if the message tripped its scheduled time and was woken by the crontab script.
+* `woken` = only present if the message tripped its scheduled time and was woken by the crontab script.
 
 Since IMAP emails are immutable any changes to this header requires "re-writing" the email. ie: fetching the email, creating a new email with the same content and deleting the original email.
 
@@ -153,8 +157,8 @@ Manually unsnoozing a snoozed email is basically the opposite, again done via IM
 The wake script needs to work without knowing the user's login details and uses the `doveadm` tool to:
 
 1. Enmuerate the Snoozed mailboxes for all users (`doveadm mailbox`)
-2. Enumerate all messages in the Snoozed mailbox with the X-Snoozed header. (`doveadm fetch`)
-3. Check the header's 'until' attribute and compare to the current date/time
+2. Enumerate all messages in the Snoozed mailbox that have the X-Snoozed header. (`doveadm fetch`)
+3. Check the header's `until` attribute and compare to the current date/time
 
 
 For emails that are due to be woken:  
@@ -169,9 +173,11 @@ For emails that are due to be woken:
 
 * Requires Elastic skin, but will accept a pull requests for other skins.
 * Currently only available in English, but will accept a pull requests for translations.
-* If a message without a "Message-ID" header is slept, upon waking it will have lost all its IMAP flags.  This is because
+* If a message without a `Message-ID` header is slept, upon waking it will have lost all its IMAP flags.  This is because
   doveadm doesn't provide a mechanism to learn the UID of the newly saved message.  To restore the flags, the wake script
-  uses the message-id instead - and if the message doesn't have a message-id it can't easily restore those flags.
+  uses the message id instead - and if the message doesn't have a message-id it can't easily restore those flags.
+* After snoozing messages, the mail list view is refreshed (rather than dynamically updated). I might fix this at some 
+  point depending how annoying I find it.
 
 ## License
 
